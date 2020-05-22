@@ -10,45 +10,44 @@ const $messages = document.querySelector('#messages')
 // Templates
 const messageTemplate = document.querySelector('#message-template').innerHTML
 const locationMessageTemplate = document.querySelector('#location-message-template').innerHTML
+const imageMessageTemplate = document.querySelector('#image-message-template').innerHTML
 const sidebarTemplate = document.querySelector('#sidebar-template').innerHTML
+
 // Options
 const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true })
 
+const autoscroll = () => {
+    // New message element
+    const $newMessage = $messages.lastElementChild
 
-const autoScroll = () => {
-    // get message
-    const $newMessage = $messages.lastElementChild 
-
-    //get height
+    // Height of the new message
     const newMessageStyles = getComputedStyle($newMessage)
     const newMessageMargin = parseInt(newMessageStyles.marginBottom)
     const newMessageHeight = $newMessage.offsetHeight + newMessageMargin
 
-    // visible height 
-    const visibleHeight = $messages.offsetHeight 
+    // Visible height
+    const visibleHeight = $messages.offsetHeight
 
-    // Height of messages container 
-    const containerHeight = $messages.scrollHeight 
+    // Height of messages container
+    const containerHeight = $messages.scrollHeight
 
-    // How far to scrolll 
-    const scrollOffset = $messages.scrollTop + visibleHeight 
+    // How far have I scrolled?
+    const scrollOffset = $messages.scrollTop + visibleHeight
 
-    if (containerHeight - newMessage <= scrollOffset) {
+    if (containerHeight - newMessageHeight <= scrollOffset) {
         $messages.scrollTop = $messages.scrollHeight
     }
 }
 
-
-
 socket.on('message', (message) => {
     console.log(message)
     const html = Mustache.render(messageTemplate, {
-        username : message.username ,
+        username: message.username,
         message: message.text,
         createdAt: moment(message.createdAt).format('h:mm a')
     })
     $messages.insertAdjacentHTML('beforeend', html)
-    autoScroll()
+    autoscroll()
 })
 
 socket.on('locationMessage', (message) => {
@@ -59,14 +58,38 @@ socket.on('locationMessage', (message) => {
         createdAt: moment(message.createdAt).format('h:mm a')
     })
     $messages.insertAdjacentHTML('beforeend', html)
-    autoScroll()
+    autoscroll()
 })
 
-socket.on('roomData' , ({ room , users}) => {
-    const html = Mustache.render(sidebarTemplate , {
-        room , 
-        users  
+socket.on('imageMessage' , (message) => {  
+    console.log(message)
+    const arrayBufferView = new Uint8Array( message.image );
+    const blob = new Blob([ arrayBufferView ], { type: "image/jpeg" } );
+    const urlCreator = window.URL || window.webkitURL;
+    const imageUrl = urlCreator.createObjectURL( blob );
+
+    const html = Mustache.render(imageMessageTemplate , {
+        username : message.username,
+        image :  imageUrl,
+        createdAt : moment(message.createdAt).format('h:mm a')
     }) 
+    $messages.insertAdjacentHTML('beforeend', html)
+    autoscroll()
+})
+
+
+
+
+
+
+
+
+
+socket.on('roomData', ({ room, users }) => {
+    const html = Mustache.render(sidebarTemplate, {
+        room,
+        users
+    })
     document.querySelector('#sidebar').innerHTML = html
 })
 
@@ -90,6 +113,43 @@ $messageForm.addEventListener('submit', (e) => {
     })
 })
 
+
+const $imageForm = document.querySelector('#image-form')
+const $imageFormButton = document.querySelector('#image-form-button')
+const input = document.querySelector('input[type="file"]')
+$imageForm.addEventListener('submit' , (e) => { 
+    e.preventDefault() 
+    $imageFormButton.setAttribute('disabled' , 'disabled')
+    const image = input.files[0]  
+    console.log(image)
+    // validation
+    const imageExtension = image.name.substring(image.name.lastIndexOf(".")+1, image.name.length)
+    const allowedExtensions = ['jpeg', 'jpg', 'png', 'gif', 'bmp']
+    if (!allowedExtensions.includes(imageExtension)) {
+        $imageForm.reset()
+        console.log("extension validation")
+        $imageFormButton.removeAttribute('disabled')
+        return alert("File not allowed")
+    } 
+
+    if (image.size > 10485760) {
+        $imageForm.reset()
+        console.log("size validation")
+        $imageFormButton.removeAttribute('disabled')   
+        return alert("File size must be less than 10mb")
+    }
+
+    socket.emit('sendImage' , image , (error) => {
+        $imageFormButton.removeAttribute('disabled')
+        if (error) {
+            return console.log(error)
+        } 
+        console.log('Image delivered !! ')
+        $imageForm.reset()
+    })
+
+})
+
 $sendLocationButton.addEventListener('click', () => {
     if (!navigator.geolocation) {
         return alert('Geolocation is not supported by your browser.')
@@ -108,9 +168,14 @@ $sendLocationButton.addEventListener('click', () => {
     })
 })
 
-socket.emit('join', { username, room } , (error) => {
+socket.emit('join', { username, room }, (error) => {
     if (error) {
         alert(error)
         location.href = '/'
-    } 
-})
+    }
+}) 
+
+
+
+
+ 
